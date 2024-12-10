@@ -1,0 +1,10 @@
+LICENSE
+README.md
+setup.py
+BbApiConnector/BbApiConnector.py
+BbApiConnector/__init__.py
+BbApiConnector_justein.egg-info/PKG-INFO
+BbApiConnector_justein.egg-info/SOURCES.txt
+BbApiConnector_justein.egg-info/dependency_links.txt
+BbApiConnector_justein.egg-info/requires.txt
+BbApiConnector_justein.egg-info/top_level.txt
