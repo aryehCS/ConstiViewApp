@@ -24,11 +24,11 @@ def get_access_token():
         'grant_type': 'client_credentials',
         'client_id': client_id,
         'client_secret': client_secret
-    })
+    }) # exchanges client_id and client_secret for an access token from Blackbaud
     return response.json().get('access_token')
 
 
-# Grade level mapping (adjust as needed)
+# Grade level mapping - will need to be updated on a yearly basis
 grade_level_mapping = {
     'Brawerman - East/Glazer': {
         2025: 'Grade 6',
@@ -147,6 +147,7 @@ grade_level_mapping = {
 # </html>
 # """
 
+# main search page
 @app.route('/', methods=['GET', 'POST'])
 def index():
     data = None
@@ -158,12 +159,12 @@ def index():
 
     constituent_id = request.args.get('constituent_id')
     if constituent_id:
-        # Direct lookup by constituent ID
+        # direct lookup by constituent ID
         api_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
         response = requests.get(api_url, headers=headers)
         if response.status_code == 200:
             data = {'value': [response.json()]}
-            # Fetch constituent codes
+            # fetch constituent codes
             codes_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/constituentcodes'
             response_codes = requests.get(codes_url, headers=headers)
             if response_codes.status_code == 200:
@@ -172,7 +173,7 @@ def index():
             else:
                 data['value'][0]['codes'] = []
 
-            # Fetch custom fields
+            # fetch custom fields -> looking for z-sis record id
             custom_fields_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/customfields'
             response_custom_fields = requests.get(custom_fields_url, headers=headers)
             if response_custom_fields.status_code == 200:
@@ -186,6 +187,7 @@ def index():
             print(f"Error fetching constituent by ID: {response.status_code}")
 
     elif request.method == 'POST':
+        # if a user submitted a search term, look up constituents
         userEntry = request.form.get('userEntry').strip()
         encoded_userEntry = requests.utils.quote(userEntry)
         api_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_userEntry}'
@@ -194,7 +196,7 @@ def index():
             data = response.json()
             for constituent in data['value']:
                 cid = constituent['id']
-                # Fetch codes
+                # fetch codes
                 codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                 response_codes = requests.get(codes_url, headers=headers)
                 if response_codes.status_code == 200:
@@ -203,7 +205,7 @@ def index():
                 else:
                     constituent['codes'] = []
 
-                # Fetch custom fields
+                # getch custom fields -> z-sis record id
                 custom_fields_url = f'{base_url}/constituent/v1/constituents/{cid}/customfields'
                 response_custom_fields = requests.get(custom_fields_url, headers=headers)
                 if response_custom_fields.status_code == 200:
@@ -217,7 +219,7 @@ def index():
 
     if data and 'value' in data:
         data['count'] = len(data['value'])
-    #return render_template_string(main_page_template, data=data)
+    #return render_template_string(main_page_template, data=data) # for embedded html (commented out)
     return render_template('main_page.html', data=data)
 
 
@@ -270,21 +272,22 @@ def index():
 
 @app.route('/relationships/<constituent_id>')
 def relationships(constituent_id):
+    # this route shows relationships for a given constituent
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
         'Bb-Api-Subscription-Key': subscription_key
     }
 
-    # Fetch constituent name
+    # fetch info to display constituent name
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
     if response_info.status_code == 200:
-        constituent_name = response_info.json().get('name', 'Unknown')
+        constituent_name = response_info.json().get('name', 'Unknown') # unknown for error handling
     else:
         constituent_name = "Unknown"
 
-    # Fetch relationships
+    # fetch relationships for the constituent
     rel_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/relationships'
     response_rel = requests.get(rel_url, headers=headers)
     if response_rel.status_code == 200:
@@ -377,12 +380,14 @@ def relationships(constituent_id):
 
 @app.route('/education/<constituent_id>')
 def education(constituent_id):
+    # shows all education records for a given constituent
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
         'Bb-Api-Subscription-Key': subscription_key
     }
 
+    # fetch const name for display at top of page
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
     if response_info.status_code == 200:
@@ -390,11 +395,12 @@ def education(constituent_id):
     else:
         constituent_name = "Unknown"
 
+    # fetch education data for the constituent
     edu_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/educations'
     response_education = requests.get(edu_url, headers=headers)
     if response_education.status_code == 200:
         education_data = response_education.json().get('value', [])
-        # Add grade level
+        # loop through each education record and assign a grade level if possible
         for record in education_data:
             school_name = record.get('school', 'N/A')
             class_of = record.get('class_of', 'N/A')
@@ -484,6 +490,8 @@ def education(constituent_id):
 
 @app.route('/upload_csv', methods=['GET', 'POST'])
 def upload_csv():
+    # route allows a user to upload CSV of search terms, then processes the terms and displays results
+    # all results are stored in the session
     data = None
     token = config['tokens']['access_token']
     headers = {
@@ -493,14 +501,16 @@ def upload_csv():
 
     if request.method == 'POST':
         file = request.files['file']
+        # make sure uploaded file is a CSV
         if file and file.filename.endswith('.csv'):
             file_data = file.read().decode('utf-8')
             csv_reader = csv.reader(StringIO(file_data))
             search_terms = [row[0] for row in csv_reader if row]
 
-            # We'll store the final CSV lines (one per constituent-education combination) in a list of dicts
+            # store the final CSV lines (one per constituent-education combination) in a list of dicts
             results = []
 
+            # process each search term from the CSV
             for term in search_terms:
                 encoded_term = requests.utils.quote(term)
                 search_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_term}'
@@ -510,7 +520,7 @@ def upload_csv():
                     for constituent in search_data.get('value', []):
                         cid = constituent['id']
 
-                        # Fetch codes
+                        # fetch const codes
                         codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                         rcodes = requests.get(codes_url, headers=headers)
                         if rcodes.status_code == 200:
@@ -519,7 +529,7 @@ def upload_csv():
                         else:
                             constituent['codes'] = []
 
-                        # Fetch custom fields
+                        # fetch custom fields (z-sis record id and possibility for other custom fields)
                         cf_url = f'{base_url}/constituent/v1/constituents/{cid}/customfields'
                         rcf = requests.get(cf_url, headers=headers)
                         if rcf.status_code == 200:
@@ -529,12 +539,13 @@ def upload_csv():
                         else:
                             constituent['z_sis_record_id'] = 'N/A'
 
-                        # Fetch education data for the constituent
+                        # fetch education data for the constituent, create one line per education record
                         edu_url = f'{base_url}/constituent/v1/constituents/{cid}/educations'
                         redu = requests.get(edu_url, headers=headers)
                         if redu.status_code == 200:
                             education_data = redu.json().get('value', [])
                             if education_data:
+                                    # for each education record, create a line in the CSV
                                 for ed in education_data:
                                     school_name = ed.get('school', 'N/A')
                                     class_of = ed.get('class_of', 'N/A')
@@ -578,7 +589,7 @@ def upload_csv():
                                         'Primary': 'Yes' if ed.get('primary') else 'No'
                                     })
                             else:
-                                # No education data, append a single line with no education
+                                # if no education data, append a single line with no education
                                 results.append({
                                     'System Record ID': cid,
                                     'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
@@ -595,7 +606,7 @@ def upload_csv():
                                     'Primary': 'No'
                                 })
                         else:
-                            # Failed to fetch education data
+                            # if fail to fetch education data, still record a line with no education
                             results.append({
                                 'System Record ID': cid,
                                 'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
@@ -615,7 +626,7 @@ def upload_csv():
             # store results in session for later download
             # build a simple 'data' dict to display the constituents (not all lines) in the template
             # For display in the table, we can just show unique constituents with minimal info
-            # Extract unique constituents by id (first occurrence)
+            # extract unique constituents by id (first occurrence)
             unique_constituents = {}
             for line in results:
                 cid = line['System Record ID']
@@ -637,12 +648,13 @@ def upload_csv():
 
 @app.route('/download_results')
 def download_results():
+    # allows user to download all results as a CSV
     if 'results' not in session:
         return "No results to download", 400
 
     results = session['results']
 
-    # Generate CSV in memory
+    # write results to an in memory CSV file
     output_str = StringIO()
     fieldnames = [
         'System Record ID', 'Z-SIS Record ID', 'Name', 'Constituent Code',
