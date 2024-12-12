@@ -28,8 +28,22 @@ Do this by running the following in terminal:
 6. Paste the text from Appendix A into the file and save the file.
 7. Navigate back to the project directory:
 ``` cd .. ```
-8. 
-
+8. Download the required packages:
+``` pip3 install -r requirements.txt ```
+9. Run the following command to run the authorization file:
+``` python3 bb_auth.py ```
+10. Go to http://localhost:13631/ in your browser and sign in with your Blackbaud account.
+11. If you are successful you should see this in the terminal:
+```
+Access Token: xxx
+Refresh Token: xxx
+Full Response: {'access_token': 'xxx', 'token_type': 'Bearer', 'expires_in': 3600, etc...}
+Tokens updated successfully in the .ini file.
+```
+12. Run the following command to run the application:
+``` python3 CSVoutput_test.py ```
+13. Now go to http://127.0.0.1:5000 in your browser.
+```
 Appendix A:
 
 [app_secrets]
@@ -55,20 +69,10 @@ test_api_endpoint = https://api.sky.blackbaud.com/constituent/v1/constituents/co
 [api]
 
 base_url = https://api.sky.blackbaud.com
-
+```
 You will need to fill out app_id, app_secret, subscription_key, and api_subscription_key. The tokens will be automatically
 filled out when you run the first file, so leave it. For the app secrets, you will either need to get this from your 
 blackbaud api portal, or get them from me (Aryeh) directly, as it is a security risk to post them publicly. 
-
-3. Now you will need to run bb_auth.py. Go to http://localhost:13631/ which should also be posted in the working terminal.
-4. Sign in and verify your access with the Blackbaud api.
-5. If you are successful you should see this in the terminal:
-Access Token: xxx
-Refresh Token: xxx
-Full Response: {'access_token': 'xxx', 'token_type': 'Bearer', 'expires_in': 3600, etc...}
-Tokens updated successfully in the .ini file.
-6. Now you can run app.py. After this go to http://127.0.0.1:5000
-7. You can now search by name, const ID, Z-SIS ID, or other search terms to bring up a list of constituents.
 
 
 Security Notice:
