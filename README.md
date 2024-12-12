@@ -1,19 +1,36 @@
-README
+# ConstiView Application
 
 This application will pull constituent data (system record ID, Z-SIS record ID, Name, constituent code(s), family
 relation data, and educational data). 
 
-The family data contains relationship type, related Constituent name, and constituent ID.
+### Family Data
+- Relationship type
+- Related constituents
+- Constituent ID
 
-The educational data contains current and former schooling data. This includes school name, status, class of, grade level,
-and metadata (ID, Const. ID, Date entered, Date Left, Primary (y/n), Type, and Majors).
+### Educational Data
+- Current and former schooling data, including:
+    - School name
+    - Status
+    - Class of
+    - Grade level
+    - Metadata
+        - ID
+        - Constituent ID
+        - Date entered
+        - Date left
+        - Primary (y/n)
+        - Type
+        - Majors
 
-Environment Set-up (macOS):
+---
+
+## Environment Set-up (macOS):
 1. Run "python3 --version" in terminal
 2. If version comes up, it is downloaded.
 3. If not, download python (make sure the download is correct for your mac - intel or arm)
 
-Instructions to download and run the application:
+## Instructions to download and run the application:
 1. Clone the repository to your local machine.
 Do this by running the following in terminal:
 ``` git clone https://github.com/aryehCS/ConstiViewApp.git ```
@@ -43,9 +60,9 @@ Tokens updated successfully in the .ini file.
 12. Run the following command to run the application:
 ``` python3 CSVoutput_test.py ```
 13. Now go to http://127.0.0.1:5000 in your browser.
-```
-Appendix A:
 
+## Appendix A:
+```
 [app_secrets]
 
 app_id = 
@@ -75,5 +92,5 @@ filled out when you run the first file, so leave it. For the app secrets, you wi
 blackbaud api portal, or get them from me (Aryeh) directly, as it is a security risk to post them publicly. 
 
 
-Security Notice:
+## Security Notice:
 Do not share app_secrets.ini publicly. It contains sensitive credentials.
