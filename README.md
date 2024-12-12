@@ -50,10 +50,12 @@ Do this by running the following in terminal:
 ``` cd .. ```
 8. Download the required packages:
 ``` pip3 install -r requirements.txt ```
-9. Run the following command to run the authorization file:
+9. Now cd back into the resources folder:
+``` cd resources ```
+10. Run the following command to run the authorization file:
 ``` python3 bb_auth.py ```
-10. Go to http://localhost:13631/ in your browser and sign in with your Blackbaud account.
-11. If you are successful you should see this in the terminal:
+11. Go to http://localhost:13631/ in your browser and sign in with your Blackbaud account. 
+12. If you are successful you should see this in the terminal:
 ```
 Access Token: xxx
 Refresh Token: xxx
