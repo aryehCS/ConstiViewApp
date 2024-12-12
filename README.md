@@ -26,7 +26,7 @@ relation data, and educational data).
 ---
 
 ## Environment Set-up (macOS):
-1. Run "python3 --version" in terminal
+1. Run ```python3 --version``` in terminal
 2. If version comes up, it is downloaded.
 3. If not, download python (make sure the download is correct for your mac - intel or arm)
 
