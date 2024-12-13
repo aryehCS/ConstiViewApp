@@ -62,12 +62,12 @@ Refresh Token: xxx
 Full Response: {'access_token': 'xxx', 'token_type': 'Bearer', 'expires_in': 3600, etc...}
 Tokens updated successfully in the .ini file.
 ```
-12. Enter Control+C to exit bb_auth.py. Now cd back into the project directory:
+13. Enter Control+C to exit bb_auth.py. Now cd back into the project directory:
 ``` cd .. ```
-13. Run the following command to run the application:
+14. Run the following command to run the application:
 ``` python3 CSVoutput_test.py ```
-14. Now go to http://127.0.0.1:5000 in your browser.
-15. When finished, enter Control+C (in terminal) to exit CSVoutput_test.py.
+15. Now go to http://127.0.0.1:5000 in your browser. 
+16. When finished, enter Control+C (in terminal) to exit CSVoutput_test.py.
 
 ## Appendix A:
 ```
