@@ -520,7 +520,7 @@ def upload_csv():
                     for constituent in search_data.get('value', []):
                         cid = constituent['id']
 
-                        # fetch const codes
+                        # fetch constituent codes
                         codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                         rcodes = requests.get(codes_url, headers=headers)
                         if rcodes.status_code == 200:
@@ -539,57 +539,53 @@ def upload_csv():
                         else:
                             constituent['z_sis_record_id'] = 'N/A'
 
-                        # fetch education data for the constituent, create one line per education record
+                        # fetch education data for the constituent
                         edu_url = f'{base_url}/constituent/v1/constituents/{cid}/educations'
                         redu = requests.get(edu_url, headers=headers)
                         if redu.status_code == 200:
                             education_data = redu.json().get('value', [])
-                            if education_data:
-                                    # for each education record, create a line in the CSV
-                                for ed in education_data:
-                                    school_name = ed.get('school', 'N/A')
-                                    class_of = ed.get('class_of', 'N/A')
-                                    if class_of != 'N/A' and school_name in grade_level_mapping:
-                                        try:
-                                            class_of_int = int(class_of)
-                                            grade_level = grade_level_mapping[school_name].get(class_of_int, 'N/A')
-                                        except:
-                                            grade_level = 'N/A'
-                                    else:
+                            primary_record = next((ed for ed in education_data if ed.get('primary')), None)  # Get primary record
+
+                            if primary_record:
+                                # extract primary record details
+                                school_name = primary_record.get('school', 'N/A')
+                                class_of = primary_record.get('class_of', 'N/A')
+
+                                if class_of != 'N/A' and school_name in grade_level_mapping:
+                                    try:
+                                        class_of_int = int(class_of)
+                                        grade_level = grade_level_mapping[school_name].get(class_of_int, 'N/A')
+                                    except:
                                         grade_level = 'N/A'
+                                else:
+                                    grade_level = 'N/A'
 
-                                    date_entered = ed.get('date_entered')
-                                    if date_entered:
-                                        de_str = f"{date_entered['d']}/{date_entered['m']}/{date_entered['y']}"
-                                    else:
-                                        de_str = 'N/A'
+                                date_entered = primary_record.get('date_entered')
+                                de_str = f"{date_entered['d']}/{date_entered['m']}/{date_entered['y']}" if date_entered else 'N/A'
 
-                                    date_left = ed.get('date_left')
-                                    if date_left:
-                                        dl_str = f"{date_left['d']}/{date_left['m']}/{date_left['y']}"
-                                    else:
-                                        dl_str = 'N/A'
+                                date_left = primary_record.get('date_left')
+                                dl_str = f"{date_left['d']}/{date_left['m']}/{date_left['y']}" if date_left else 'N/A'
 
-                                    majors = ed.get('majors', [])
-                                    majors_str = ", ".join(majors) if majors else 'N/A'
+                                majors = primary_record.get('majors', [])
+                                majors_str = ", ".join(majors) if majors else 'N/A'
 
-                                    results.append({
-                                        'System Record ID': cid,
-                                        'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
-                                        'Name': constituent['name'],
-                                        'Constituent Code': ', '.join(constituent.get('codes', [])),
-                                        'School Name': school_name,
-                                        'Status': ed.get('status', 'N/A'),
-                                        'Class Of': class_of,
-                                        'Grade Level': grade_level,
-                                        'Type': ed.get('type', 'N/A'),
-                                        'Majors': majors_str,
-                                        'Date Entered': de_str,
-                                        'Date Left': dl_str,
-                                        'Primary': 'Yes' if ed.get('primary') else 'No'
-                                    })
+                                results.append({
+                                    'System Record ID': cid,
+                                    'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
+                                    'Name': constituent['name'],
+                                    'Constituent Code': ', '.join(constituent.get('codes', [])),
+                                    'School Name': school_name,
+                                    'Status': primary_record.get('status', 'N/A'),
+                                    'Class Of': class_of,
+                                    'Grade Level': grade_level,
+                                    'Type': primary_record.get('type', 'N/A'),
+                                    'Majors': majors_str,
+                                    'Date Entered': de_str,
+                                    'Date Left': dl_str,
+                                    'Primary': 'Yes'
+                                })
                             else:
-                                # if no education data, append a single line with no education
+                                # append a line with no education data if no primary record exists
                                 results.append({
                                     'System Record ID': cid,
                                     'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
@@ -605,28 +601,11 @@ def upload_csv():
                                     'Date Left': 'N/A',
                                     'Primary': 'No'
                                 })
-                        else:
-                            # if fail to fetch education data, still record a line with no education
-                            results.append({
-                                'System Record ID': cid,
-                                'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
-                                'Name': constituent['name'],
-                                'Constituent Code': ', '.join(constituent.get('codes', [])),
-                                'School Name': 'N/A',
-                                'Status': 'N/A',
-                                'Class Of': 'N/A',
-                                'Grade Level': 'N/A',
-                                'Type': 'N/A',
-                                'Majors': 'N/A',
-                                'Date Entered': 'N/A',
-                                'Date Left': 'N/A',
-                                'Primary': 'No'
-                            })
 
             # store results in session for later download
-            # build a simple 'data' dict to display the constituents (not all lines) in the template
-            # For display in the table, we can just show unique constituents with minimal info
-            # extract unique constituents by id (first occurrence)
+            session['results'] = results
+
+            # extract unique constituents
             unique_constituents = {}
             for line in results:
                 cid = line['System Record ID']
@@ -639,11 +618,10 @@ def upload_csv():
                     }
 
             final_data = {'value': list(unique_constituents.values()), 'count': len(unique_constituents)}
-            session['results'] = results
             data = final_data
 
-    # return render_template_string(csv_page_template, data=data)
     return render_template('CSV_page.html', data=data)
+
 
 
 @app.route('/download_results')
