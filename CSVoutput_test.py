@@ -159,11 +159,14 @@ def index():
 
     constituent_id = request.args.get('constituent_id')
     if constituent_id:
-        # direct lookup by constituent ID
         api_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
         response = requests.get(api_url, headers=headers)
         if response.status_code == 200:
-            data = {'value': [response.json()]}
+            constituent_data = response.json()
+            print("API Response for constituent:", constituent_data)  # Debug statement
+            constituent_data['import_id'] = constituent_data.get('import_id', 'N/A')
+            constituent_data['constituent_id'] = constituent_data.get('lookup_id', 'N/A')
+            data = {'value': [constituent_data]}
             # fetch constituent codes
             codes_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/constituentcodes'
             response_codes = requests.get(codes_url, headers=headers)
@@ -187,15 +190,17 @@ def index():
             print(f"Error fetching constituent by ID: {response.status_code}")
 
     elif request.method == 'POST':
-        # if a user submitted a search term, look up constituents
         userEntry = request.form.get('userEntry').strip()
         encoded_userEntry = requests.utils.quote(userEntry)
         api_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_userEntry}'
         response = requests.get(api_url, headers=headers)
         if response.status_code == 200:
             data = response.json()
+            print("API Response for search:", data)  # Debug statement
             for constituent in data['value']:
                 cid = constituent['id']
+                constituent['import_id'] = constituent.get('import_id', 'N/A')
+                constituent['constituent_id'] = constituent.get('lookup_id', 'N/A')
                 # fetch codes
                 codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                 response_codes = requests.get(codes_url, headers=headers)
@@ -205,7 +210,7 @@ def index():
                 else:
                     constituent['codes'] = []
 
-                # getch custom fields -> z-sis record id
+                # fetch custom fields -> z-sis record id
                 custom_fields_url = f'{base_url}/constituent/v1/constituents/{cid}/customfields'
                 response_custom_fields = requests.get(custom_fields_url, headers=headers)
                 if response_custom_fields.status_code == 200:
@@ -219,7 +224,6 @@ def index():
 
     if data and 'value' in data:
         data['count'] = len(data['value'])
-    #return render_template_string(main_page_template, data=data) # for embedded html (commented out)
     return render_template('main_page.html', data=data)
 
 
@@ -490,8 +494,6 @@ def education(constituent_id):
 
 @app.route('/upload_csv', methods=['GET', 'POST'])
 def upload_csv():
-    # route allows a user to upload CSV of search terms, then processes the terms and displays results
-    # all results are stored in the session
     data = None
     token = config['tokens']['access_token']
     headers = {
@@ -501,24 +503,23 @@ def upload_csv():
 
     if request.method == 'POST':
         file = request.files['file']
-        # make sure uploaded file is a CSV
         if file and file.filename.endswith('.csv'):
             file_data = file.read().decode('utf-8')
             csv_reader = csv.reader(StringIO(file_data))
             search_terms = [row[0] for row in csv_reader if row]
 
-            # store the final CSV lines (one per constituent-education combination) in a list of dicts
             results = []
 
-            # process each search term from the CSV
             for term in search_terms:
                 encoded_term = requests.utils.quote(term)
                 search_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_term}'
                 response = requests.get(search_url, headers=headers)
                 if response.status_code == 200:
                     search_data = response.json()
+                    print("API Response for search term:", term, search_data)  # Debug statement
                     for constituent in search_data.get('value', []):
                         cid = constituent['id']
+                        constituent['constituent_id'] = constituent.get('lookup_id', 'N/A')
 
                         # fetch constituent codes
                         codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
@@ -544,17 +545,15 @@ def upload_csv():
                         redu = requests.get(edu_url, headers=headers)
                         if redu.status_code == 200:
                             education_data = redu.json().get('value', [])
-                            primary_record = next((ed for ed in education_data if ed.get('primary')), None)  # Get primary record
+                            primary_record = next((ed for ed in education_data if ed.get('primary')), None)
 
                             if primary_record:
-                                # extract primary record details
                                 school_name = primary_record.get('school', 'N/A')
                                 class_of = primary_record.get('class_of', 'N/A')
 
                                 if class_of != 'N/A' and school_name in grade_level_mapping:
                                     try:
-                                        class_of_int = int(class_of)
-                                        grade_level = grade_level_mapping[school_name].get(class_of_int, 'N/A')
+                                        grade_level = grade_level_mapping[school_name].get(int(class_of), 'N/A')
                                     except:
                                         grade_level = 'N/A'
                                 else:
@@ -571,6 +570,7 @@ def upload_csv():
 
                                 results.append({
                                     'System Record ID': cid,
+                                    'Constituent ID': constituent.get('constituent_id', 'N/A'),
                                     'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
                                     'Name': constituent['name'],
                                     'Constituent Code': ', '.join(constituent.get('codes', [])),
@@ -585,9 +585,9 @@ def upload_csv():
                                     'Primary': 'Yes'
                                 })
                             else:
-                                # append a line with no education data if no primary record exists
                                 results.append({
                                     'System Record ID': cid,
+                                    'Constituent ID': constituent.get('constituent_id', 'N/A'),
                                     'Z-SIS Record ID': constituent.get('z_sis_record_id', 'N/A'),
                                     'Name': constituent['name'],
                                     'Constituent Code': ', '.join(constituent.get('codes', [])),
@@ -602,16 +602,15 @@ def upload_csv():
                                     'Primary': 'No'
                                 })
 
-            # store results in session for later download
             session['results'] = results
 
-            # extract unique constituents
             unique_constituents = {}
             for line in results:
                 cid = line['System Record ID']
                 if cid not in unique_constituents:
                     unique_constituents[cid] = {
                         'id': cid,
+                        'constituent_id': line['Constituent ID'],
                         'z_sis_record_id': line['Z-SIS Record ID'],
                         'name': line['Name'],
                         'codes': line['Constituent Code'].split(', ') if line['Constituent Code'] else [],
@@ -626,16 +625,14 @@ def upload_csv():
 
 @app.route('/download_results')
 def download_results():
-    # allows user to download all results as a CSV
     if 'results' not in session:
         return "No results to download", 400
 
     results = session['results']
 
-    # write results to an in memory CSV file
     output_str = StringIO()
     fieldnames = [
-        'System Record ID', 'Z-SIS Record ID', 'Name', 'Constituent Code',
+        'System Record ID', 'Constituent ID', 'Z-SIS Record ID', 'Name', 'Constituent Code',
         'School Name', 'Status', 'Class Of', 'Grade Level', 'Type', 'Majors',
         'Date Entered', 'Date Left', 'Primary'
     ]
@@ -644,10 +641,7 @@ def download_results():
     for line in results:
         writer.writerow(line)
 
-    # get CSV string and convert to bytes
     csv_data = output_str.getvalue().encode('utf-8')
-
-    # create BytesIO stream from encoded CSV data
     output = BytesIO(csv_data)
 
     return send_file(output, mimetype='text/csv', download_name='output.csv', as_attachment=True)

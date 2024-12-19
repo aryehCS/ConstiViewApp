@@ -32,6 +32,7 @@
         <thead class="thead-dark">
           <tr>
             <th>System Record ID</th>
+            <th>Constituent ID</th>
             <th>Z-SIS Record ID</th>
             <th>Name</th>
             <th>Constituent Code</th>
@@ -42,6 +43,7 @@
           {% for constituent in data['value'] %}
             <tr>
               <td>{{ constituent['id'] }}</td>
+              <td>{{ constituent.get('constituent_id', 'N/A') }}</td>
               <td>{{ constituent.get('z_sis_record_id', 'N/A') }}</td>
               <td><a href="{{ url_for('relationships', constituent_id=constituent['id']) }}">{{ constituent['name'] }}</a></td>
               <td>
