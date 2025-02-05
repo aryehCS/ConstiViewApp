@@ -226,9 +226,10 @@ def upload_csv():
     """
     Upload a CSV that contains your Z-SIS IDs in the first column.
     We'll:
-    1. Read each row's Z-SIS ID (call it 'term').
-    2. Search the Blackbaud API to get constituent data for that 'term'.
-    3. Collect each result, but use the *CSV's* Z-SIS ID as 'Z-SIS Record ID'.
+    1. Clear old session data (if any).
+    2. Read each row's Z-SIS ID (call it 'term').
+    3. Search the Blackbaud API to get constituent data for that 'term'.
+    4. Collect each result, but use the *CSV's* Z-SIS ID as 'Z-SIS Record ID'.
     """
     data = None
     token = config['tokens']['access_token']
@@ -238,6 +239,10 @@ def upload_csv():
     }
 
     if request.method == 'POST':
+        # ---- Clear old results to ensure the download CSV is always fresh:
+        session.pop('results', None)
+        # ---------------------------------------
+
         file = request.files['file']
         if file and file.filename.endswith('.csv'):
             file_data = file.read().decode('utf-8')
@@ -395,6 +400,7 @@ def upload_csv():
                         'Primary': 'No'
                     })
 
+            # ---- Save new results in the session ----
             session['results'] = results
 
             # Build summary for display if needed
