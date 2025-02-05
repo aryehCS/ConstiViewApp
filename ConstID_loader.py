@@ -27,7 +27,6 @@ def get_access_token():
     })
     return response.json().get('access_token')
 
-
 # Grade level mapping - will need to be updated on a yearly basis
 grade_level_mapping = {
     'Brawerman - East/Glazer': {
@@ -77,76 +76,6 @@ grade_level_mapping = {
     }
 }
 
-# main_page_template = """
-# <!doctype html>
-# <html lang="en">
-# <head>
-# <meta charset="utf-8">
-# <title>Constituent Search</title>
-# <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-# <style>
-#   body { background-color: #f8f9fa; }
-#   .container {
-#     margin-top: 50px;
-#     padding: 20px;
-#     background-color: #ffffff;
-#     border-radius: 10px;
-#     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-#   }
-#   table { margin-top: 20px; }
-#   h1, h3 { text-align: center; }
-# </style>
-# </head>
-# <body>
-# <div class="container">
-#   <h1 class="mt-3">Constituent Search</h1>
-#   <form method="POST" class="form-inline justify-content-center my-4">
-#     <input type="text" name="userEntry" class="form-control mr-2" placeholder="Enter search term" required>
-#     <button type="submit" class="btn btn-primary">Search</button>
-#   </form>
-#   <a href="{{ url_for('upload_csv') }}" class="btn btn-primary">Upload CSV</a>
-#   {% if data %}
-#     <h3 class="text-primary">Search Results (Total: {{ data['count'] }})</h3>
-#     <div class="table-responsive">
-#       <table class="table table-striped table-hover table-bordered">
-#         <thead class="thead-dark">
-#           <tr>
-#             <th>System Record ID</th>
-#             <th>Z-SIS Record ID</th>
-#             <th>Name</th>
-#             <th>Constituent Code</th>
-#             <th>Education</th>
-#           </tr>
-#         </thead>
-#         <tbody>
-#           {% for constituent in data['value'] %}
-#             <tr>
-#               <td>{{ constituent['id'] }}</td>
-#               <td>{{ constituent.get('z_sis_record_id', 'N/A') }}</td>
-#               <td><a href="{{ url_for('relationships', constituent_id=constituent['id']) }}">{{ constituent['name'] }}</a></td>
-#               <td>
-#                 {% if constituent['codes'] %}
-#                   {% for code in constituent['codes'] %}
-#                     <span class="badge badge-info">{{ code }}</span><br>
-#                   {% endfor %}
-#                 {% else %}
-#                   <span class="text-muted">N/A</span>
-#                 {% endif %}
-#               </td>
-#               <td>
-#                 <a href="{{ url_for('education', constituent_id=constituent['id']) }}" class="btn btn-sm btn-secondary">View</a>
-#               </td>
-#             </tr>
-#           {% endfor %}
-#         </tbody>
-#       </table>
-#     </div>
-#   {% endif %}
-# </div>
-# </body>
-# </html>
-# """
-
 # main search page
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -166,7 +95,23 @@ def index():
             print("API Response for constituent:", constituent_data)  # Debug statement
             constituent_data['import_id'] = constituent_data.get('import_id', 'N/A')
             constituent_data['constituent_id'] = constituent_data.get('lookup_id', 'N/A')
+
+            # ---- ADDED CODE FOR ALIASES HERE ----
+            # Pull the SIS ID alias for this constituent:
+            alias_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/aliases'
+            alias_resp = requests.get(alias_url, headers=headers)
+            if alias_resp.status_code == 200:
+                alias_list = alias_resp.json().get('value', [])
+                # find an alias where 'alias_type' == 'SIS ID'
+                sis_id_alias = next((a['alias'] for a in alias_list if a.get('alias_type') == 'SIS ID'), 'N/A')
+            else:
+                sis_id_alias = 'N/A'
+            # put it in your data structure
+            constituent_data['sis_id_alias'] = sis_id_alias
+            # ------------------------------------
+
             data = {'value': [constituent_data]}
+
             # fetch constituent codes
             codes_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/constituentcodes'
             response_codes = requests.get(codes_url, headers=headers)
@@ -197,10 +142,23 @@ def index():
         if response.status_code == 200:
             data = response.json()
             print("API Response for search:", data)  # Debug statement
+
             for constituent in data['value']:
                 cid = constituent['id']
                 constituent['import_id'] = constituent.get('import_id', 'N/A')
                 constituent['constituent_id'] = constituent.get('lookup_id', 'N/A')
+
+                # ---- ADDED CODE FOR ALIASES HERE ----
+                alias_url = f'{base_url}/constituent/v1/constituents/{cid}/aliases'
+                alias_resp = requests.get(alias_url, headers=headers)
+                if alias_resp.status_code == 200:
+                    alias_list = alias_resp.json().get('value', [])
+                    sis_id_alias = next((a['alias'] for a in alias_list if a.get('alias_type') == 'SIS ID'), 'N/A')
+                else:
+                    sis_id_alias = 'N/A'
+                constituent['sis_id_alias'] = sis_id_alias
+                # -------------------------------------
+
                 # fetch codes
                 codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                 response_codes = requests.get(codes_url, headers=headers)
@@ -215,7 +173,11 @@ def index():
                 response_custom_fields = requests.get(custom_fields_url, headers=headers)
                 if response_custom_fields.status_code == 200:
                     custom_fields = response_custom_fields.json().get('value', [])
-                    z_sis_record_id = next((field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'), 'N/A')
+                    z_sis_record_id = next(
+                        (field['value'] for field in custom_fields
+                         if field.get('category') == 'Z-SIS Record ID'),
+                        'N/A'
+                    )
                     constituent['z_sis_record_id'] = z_sis_record_id
                 else:
                     constituent['z_sis_record_id'] = 'N/A'
@@ -226,53 +188,6 @@ def index():
         data['count'] = len(data['value'])
     return render_template('main_page.html', data=data)
 
-
-# relationships_template = """
-# <!doctype html>
-# <html lang="en">
-# <head>
-# <meta charset="utf-8">
-# <title>Relationships for {{ constituent_name }}</title>
-# <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-# <style>
-#   .container {
-#     margin-top: 50px;
-#     padding: 20px;
-#     background-color: #ffffff;
-#     border-radius: 10px;
-#     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-#   }
-#   h1 { text-align: center; }
-# </style>
-# </head>
-# <body>
-# <div class="container">
-#   <h1>Relationships for {{ constituent_name }}</h1>
-#   <div class="table-responsive">
-#     <table class="table table-striped table-hover table-bordered">
-#       <thead class="thead-dark">
-#         <tr>
-#           <th>Relationship Type</th>
-#           <th>Related Constituent Name</th>
-#           <th>Related Constituent ID</th>
-#         </tr>
-#       </thead>
-#       <tbody>
-#         {% for relationship in relationships %}
-#           <tr>
-#             <td>{{ relationship['type'] }}</td>
-#             <td><a href="{{ url_for('index', constituent_id=relationship['relation_id']) }}">{{ relationship['name'] }}</a></td>
-#             <td>{{ relationship['relation_id'] }}</td>
-#           </tr>
-#         {% endfor %}
-#       </tbody>
-#     </table>
-#   </div>
-#   <a href="{{ url_for('index') }}" class="btn btn-secondary mt-4">Back to Search</a>
-# </div>
-# </body>
-# </html>
-# """
 
 @app.route('/relationships/<constituent_id>')
 def relationships(constituent_id):
@@ -287,7 +202,7 @@ def relationships(constituent_id):
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
     if response_info.status_code == 200:
-        constituent_name = response_info.json().get('name', 'Unknown') # unknown for error handling
+        constituent_name = response_info.json().get('name', 'Unknown')
     else:
         constituent_name = "Unknown"
 
@@ -299,88 +214,10 @@ def relationships(constituent_id):
     else:
         relationships = []
 
-    #return render_template_string(relationships_template, relationships=relationships, constituent_name=constituent_name)
-    return render_template('relationships_page.html', relationships=relationships, constituent_name=constituent_name)
+    return render_template('relationships_page.html',
+                           relationships=relationships,
+                           constituent_name=constituent_name)
 
-
-# education_template = """
-# <!doctype html>
-# <html lang="en">
-# <head>
-# <meta charset="utf-8">
-# <title>Educational Data for {{ constituent_name }}</title>
-# <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-# <style>
-#   .container {
-#     margin-top: 50px;
-#     padding: 20px;
-#     background-color: #ffffff;
-#     border-radius: 10px;
-#     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-#   }
-#   h1 { text-align: center; }
-# </style>
-# </head>
-# <body>
-# <div class="container">
-#   <h1>Educational Data for {{ constituent_name }}</h1>
-#   <div class="table-responsive">
-#     <table class="table table-striped table-hover table-bordered">
-#       <thead class="thead-dark">
-#         <tr>
-#           <th>School Name</th>
-#           <th>Status</th>
-#           <th>Class of</th>
-#           <th>Grade Level</th>
-#           <th>Metadata</th>
-#         </tr>
-#       </thead>
-#       <tbody>
-#         {% for record in education_data %}
-#           <tr>
-#             <td>{{ record.get('school', 'N/A') }}</td>
-#             <td>{{ record.get('status', 'N/A') }}</td>
-#             <td>{{ record.get('class_of', 'N/A') }}</td>
-#             <td>{{ record.get('grade_level', 'N/A') }}</td>
-#             <td>
-#               <ul>
-#                 <li><strong>ID:</strong> {{ record.get('id', 'N/A') }}</li>
-#                 <li><strong>Constituent ID:</strong> {{ record.get('constituent_id', 'N/A') }}</li>
-#                 <li><strong>Date Entered:</strong>
-#                   {% if record.get('date_entered') %}
-#                     {{ record['date_entered']['d'] }}/{{ record['date_entered']['m'] }}/{{ record['date_entered']['y'] }}
-#                   {% else %}
-#                     N/A
-#                   {% endif %}
-#                 </li>
-#                 <li><strong>Date Left:</strong>
-#                   {% if record.get('date_left') %}
-#                     {{ record['date_left']['d'] }}/{{ record['date_left']['m'] }}/{{ record['date_left']['y'] }}
-#                   {% else %}
-#                     N/A
-#                   {% endif %}
-#                 </li>
-#                 <li><strong>Primary:</strong> {{ 'Yes' if record.get('primary') else 'No' }}</li>
-#                 <li><strong>Type:</strong> {{ record.get('type', 'N/A') }}</li>
-#                 <li><strong>Majors:</strong>
-#                   {% if record.get('majors') %}
-#                     {{ record['majors'] | join(', ') }}
-#                   {% else %}
-#                     N/A
-#                   {% endif %}
-#                 </li>
-#               </ul>
-#             </td>
-#           </tr>
-#         {% endfor %}
-#       </tbody>
-#     </table>
-#   </div>
-#   <a href="{{ url_for('index') }}" class="btn btn-secondary mt-4">Back to Search</a>
-# </div>
-# </body>
-# </html>
-# """
 
 @app.route('/education/<constituent_id>')
 def education(constituent_id):
@@ -420,82 +257,13 @@ def education(constituent_id):
     else:
         education_data = []
 
-    #return render_template_string(education_template, education_data=education_data, constituent_name=constituent_name)
-    return render_template('education_page.html', education_data=education_data, constituent_name=constituent_name)
-
-# csv_page_template = """
-# <!doctype html>
-# <html lang="en">
-# <head>
-# <meta charset="utf-8">
-# <title>Upload CSV</title>
-# <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-# <style>
-#   body { background-color: #f8f9fa; }
-#   .container {
-#     margin-top: 50px;
-#     padding: 20px;
-#     background-color: #ffffff;
-#     border-radius: 10px;
-#     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-#   }
-#   h1 { text-align: center; }
-# </style>
-# </head>
-# <body>
-# <div class="container">
-#   <h1 class="mt-3">Upload CSV</h1>
-#   <form method="POST" enctype="multipart/form-data" class="form-inline justify-content-center my-4">
-#     <input type="file" name="file" class="form-control mr-2" required>
-#     <button type="submit" class="btn btn-primary">Upload</button>
-#   </form>
-#   {% if data %}
-#     <h3 class="text-primary">Search Results (Total: {{ data['count'] }})</h3>
-#     <div class="table-responsive">
-#       <table class="table table-striped table-hover table-bordered">
-#         <thead class="thead-dark">
-#           <tr>
-#             <th>System Record ID</th>
-#             <th>Z-SIS Record ID</th>
-#             <th>Name</th>
-#             <th>Constituent Code</th>
-#             <th>Education</th>
-#           </tr>
-#         </thead>
-#         <tbody>
-#           {% for constituent in data['value'] %}
-#             <tr>
-#               <td>{{ constituent['id'] }}</td>
-#               <td>{{ constituent.get('z_sis_record_id', 'N/A') }}</td>
-#               <td><a href="{{ url_for('relationships', constituent_id=constituent['id']) }}">{{ constituent['name'] }}</a></td>
-#               <td>
-#                 {% if constituent['codes'] %}
-#                   {% for code in constituent['codes'] %}
-#                     <span class="badge badge-info">{{ code }}</span><br>
-#                   {% endfor %}
-#                 {% else %}
-#                   <span class="text-muted">N/A</span>
-#                 {% endif %}
-#               </td>
-#               <td>
-#                 <a href="{{ url_for('education', constituent_id=constituent['id']) }}" class="btn btn-sm btn-secondary">View</a>
-#               </td>
-#             </tr>
-#           {% endfor %}
-#         </tbody>
-#       </table>
-#     </div>
-#     <a href="{{ url_for('download_results') }}" class="btn btn-success mt-4">Download Results as CSV</a>
-#   {% endif %}
-# </div>
-# </body>
-# </html>
-# """
+    return render_template('education_page.html',
+                           education_data=education_data,
+                           constituent_name=constituent_name)
 
 @app.route('/upload_csv', methods=['GET', 'POST'])
 def upload_csv():
     data = None
-    # Re-use your stored token:
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
@@ -508,8 +276,6 @@ def upload_csv():
             file_data = file.read().decode('utf-8')
             csv_reader = csv.reader(StringIO(file_data))
 
-            # We'll store the full “details” in `results`,
-            # but also keep a lightweight unique_constituents if needed.
             results = []
 
             for row in csv_reader:
@@ -523,8 +289,6 @@ def upload_csv():
                 search_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_term}'
                 response = requests.get(search_url, headers=headers)
 
-                # If we find constituents, capture the first (or all).
-                # If no results, we still add an entry with "lookup_id" = "N/A"
                 if response.status_code == 200:
                     search_data = response.json()
                     found_constituents = search_data.get('value', [])
@@ -534,18 +298,18 @@ def upload_csv():
                         results.append({
                             'Original Z-SIS ID': z_sis_id,
                             'Returned lookup_id': 'N/A',
+                            'SIS ID Alias': 'N/A',  # new column for the SIS alias
                             'Name': 'Not Found',
                             'System Record ID': 'N/A',
                             'Z-SIS Record ID': 'N/A',
                         })
                     else:
-                        # If you only want the "best" or first match:
+                        # For each found constituent
                         for constituent in found_constituents:
                             cid = constituent['id']
-                            # The “lookup_id” field in the constituent if present:
                             returned_lookup_id = constituent.get('lookup_id', 'N/A')
 
-                            # (Optional) Fetch custom fields to get Z-SIS Record ID
+                            # (Optional) Fetch custom fields
                             cf_url = f'{base_url}/constituent/v1/constituents/{cid}/customfields'
                             rcf = requests.get(cf_url, headers=headers)
                             if rcf.status_code == 200:
@@ -557,10 +321,20 @@ def upload_csv():
                             else:
                                 z_sis_record_id = 'N/A'
 
-                            # Store the relevant data in results
+                            # ---- ADDED CODE FOR ALIASES HERE ----
+                            alias_url = f'{base_url}/constituent/v1/constituents/{cid}/aliases'
+                            alias_resp = requests.get(alias_url, headers=headers)
+                            if alias_resp.status_code == 200:
+                                alias_list = alias_resp.json().get('value', [])
+                                sis_id_alias = next((a['alias'] for a in alias_list if a.get('alias_type') == 'SIS ID'), 'N/A')
+                            else:
+                                sis_id_alias = 'N/A'
+                            # -------------------------------------
+
                             results.append({
                                 'Original Z-SIS ID': z_sis_id,
                                 'Returned lookup_id': returned_lookup_id,
+                                'SIS ID Alias': sis_id_alias,   # store the SIS alias from aliases endpoint
                                 'Name': constituent['name'],
                                 'System Record ID': cid,
                                 'Z-SIS Record ID': z_sis_record_id
@@ -570,6 +344,7 @@ def upload_csv():
                     results.append({
                         'Original Z-SIS ID': z_sis_id,
                         'Returned lookup_id': 'N/A',
+                        'SIS ID Alias': 'N/A',
                         'Name': 'API Error',
                         'System Record ID': 'N/A',
                         'Z-SIS Record ID': 'N/A',
@@ -578,20 +353,21 @@ def upload_csv():
             # Save full results to session, so we can download them later
             session['results'] = results
 
-            # Build a "summary" or "unique" data for display if needed
-            # If you just want to display them as a table, you can pass `results` directly:
+            # Build a "summary" for display if needed
             unique_constituents = {}
             for entry in results:
                 cid = entry['System Record ID']
                 if cid not in unique_constituents:
                     unique_constituents[cid] = {
                         'id': cid,
-                        'z_sis_record_id': entry['Z-SIS Record ID'],
                         'lookup_id': entry['Returned lookup_id'],
+                        'sis_alias': entry['SIS ID Alias'],
+                        'z_sis_record_id': entry['Z-SIS Record ID'],
                         'name': entry['Name'],
                         'original_z_sis_id': entry['Original Z-SIS ID']
                     }
-            final_data = {'value': list(unique_constituents.values()), 'count': len(unique_constituents)}
+            final_data = {'value': list(unique_constituents.values()),
+                          'count': len(unique_constituents)}
             data = final_data
 
     return render_template('CSV_page.html', data=data)
@@ -605,10 +381,11 @@ def download_results():
     results = session['results']
 
     output_str = StringIO()
-    # Add columns in the final CSV:
+    # Add columns in the final CSV, including the new SIS ID Alias:
     fieldnames = [
         'Original Z-SIS ID',
         'Returned lookup_id',
+        'SIS ID Alias',
         'Name',
         'System Record ID',
         'Z-SIS Record ID'
