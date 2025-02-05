@@ -24,7 +24,7 @@ def get_access_token():
         'grant_type': 'client_credentials',
         'client_id': client_id,
         'client_secret': client_secret
-    })
+    }) # exchanges client_id and client_secret for an access token from Blackbaud
     return response.json().get('access_token')
 
 # Grade level mapping - will need to be updated on a yearly basis
@@ -109,11 +109,11 @@ def index():
             response_custom_fields = requests.get(custom_fields_url, headers=headers)
             if response_custom_fields.status_code == 200:
                 custom_fields = response_custom_fields.json().get('value', [])
-                z_sis_record_id = next((field['value'] for field in custom_fields
-                                        if field.get('category') == 'Z-SIS Record ID'), 'N/A')
+                z_sis_record_id = next((field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'), 'N/A')
                 data['value'][0]['z_sis_record_id'] = z_sis_record_id
             else:
                 data['value'][0]['z_sis_record_id'] = 'N/A'
+
         else:
             print(f"Error fetching constituent by ID: {response.status_code}")
 
@@ -129,7 +129,6 @@ def index():
                 cid = constituent['id']
                 constituent['import_id'] = constituent.get('import_id', 'N/A')
                 constituent['constituent_id'] = constituent.get('lookup_id', 'N/A')
-
                 # fetch codes
                 codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                 response_codes = requests.get(codes_url, headers=headers)
@@ -144,8 +143,7 @@ def index():
                 response_custom_fields = requests.get(custom_fields_url, headers=headers)
                 if response_custom_fields.status_code == 200:
                     custom_fields = response_custom_fields.json().get('value', [])
-                    z_sis_record_id = next((field['value'] for field in custom_fields
-                                            if field.get('category') == 'Z-SIS Record ID'), 'N/A')
+                    z_sis_record_id = next((field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'), 'N/A')
                     constituent['z_sis_record_id'] = z_sis_record_id
                 else:
                     constituent['z_sis_record_id'] = 'N/A'
@@ -158,12 +156,14 @@ def index():
 
 @app.route('/relationships/<constituent_id>')
 def relationships(constituent_id):
+    # this route shows relationships for a given constituent
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
         'Bb-Api-Subscription-Key': subscription_key
     }
 
+    # fetch info to display constituent name
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
     if response_info.status_code == 200:
@@ -171,6 +171,7 @@ def relationships(constituent_id):
     else:
         constituent_name = "Unknown"
 
+    # fetch relationships for the constituent
     rel_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/relationships'
     response_rel = requests.get(rel_url, headers=headers)
     if response_rel.status_code == 200:
@@ -178,18 +179,18 @@ def relationships(constituent_id):
     else:
         relationships = []
 
-    return render_template('relationships_page.html',
-                           relationships=relationships,
-                           constituent_name=constituent_name)
+    return render_template('relationships_page.html', relationships=relationships, constituent_name=constituent_name)
 
 @app.route('/education/<constituent_id>')
 def education(constituent_id):
+    # shows all education records for a given constituent
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
         'Bb-Api-Subscription-Key': subscription_key
     }
 
+    # fetch const name for display at top of page
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
     if response_info.status_code == 200:
@@ -197,10 +198,12 @@ def education(constituent_id):
     else:
         constituent_name = "Unknown"
 
+    # fetch education data
     edu_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/educations'
     response_education = requests.get(edu_url, headers=headers)
     if response_education.status_code == 200:
         education_data = response_education.json().get('value', [])
+        # loop & map classes
         for record in education_data:
             school_name = record.get('school', 'N/A')
             class_of = record.get('class_of', 'N/A')
@@ -216,16 +219,14 @@ def education(constituent_id):
     else:
         education_data = []
 
-    return render_template('education_page.html',
-                           education_data=education_data,
-                           constituent_name=constituent_name)
+    return render_template('education_page.html', education_data=education_data, constituent_name=constituent_name)
 
 @app.route('/upload_csv', methods=['GET', 'POST'])
 def upload_csv():
     """
     Upload a CSV that contains your Z-SIS IDs in the first column.
     We'll:
-    1. Clear the session entirely, to ensure fresh data each time.
+    1. Clear old session data (if any).
     2. Read each row's Z-SIS ID (call it 'term').
     3. Search the Blackbaud API to get constituent data for that 'term'.
     4. Collect each result, but use the *CSV's* Z-SIS ID as 'Z-SIS Record ID'.
@@ -238,8 +239,9 @@ def upload_csv():
     }
 
     if request.method == 'POST':
-        # ---- FULLY CLEAR THE SESSION for a fresh start
-        session.clear()
+        # ---- Clear old results to ensure the download CSV is always fresh:
+        session.pop('results', None)
+        # ---------------------------------------
 
         file = request.files['file']
         if file and file.filename.endswith('.csv'):
@@ -261,9 +263,11 @@ def upload_csv():
                     found_constituents = search_data.get('value', [])
 
                     if not found_constituents:
+                        # No match found for that Z-SIS ID
                         results.append({
                             'System Record ID': 'N/A',
                             'Constituent ID': 'N/A',
+                            # <-- Use the CSV's term directly in the final output
                             'Z-SIS Record ID': term,
                             'Name': 'Not Found',
                             'Constituent Code': 'N/A',
@@ -280,7 +284,9 @@ def upload_csv():
                     else:
                         for constituent in found_constituents:
                             cid = constituent['id']
+                            # If the API returns a 'lookup_id' or something similar
                             bb_lookup_id = constituent.get('lookup_id', 'N/A')
+                            # Or use the name
                             name_val = constituent.get('name', 'N/A')
 
                             # fetch codes
@@ -311,17 +317,20 @@ def upload_csv():
                                         grade_level = 'N/A'
 
                                     date_entered = primary_record.get('date_entered')
-                                    de_str = (f"{date_entered['d']}/{date_entered['m']}/{date_entered['y']}"
-                                              if date_entered else 'N/A')
+                                    de_str = f"{date_entered['d']}/{date_entered['m']}/{date_entered['y']}" if date_entered else 'N/A'
+
                                     date_left = primary_record.get('date_left')
-                                    dl_str = (f"{date_left['d']}/{date_left['m']}/{date_left['y']}"
-                                              if date_left else 'N/A')
+                                    dl_str = f"{date_left['d']}/{date_left['m']}/{date_left['y']}" if date_left else 'N/A'
+
                                     majors_list = primary_record.get('majors', [])
                                     majors_str = ", ".join(majors_list) if majors_list else 'N/A'
 
+                                    # Add a row for this constituent
                                     results.append({
                                         'System Record ID': cid,
+                                        # We'll treat 'Constituent ID' as the 'lookup_id'
                                         'Constituent ID': bb_lookup_id,
+                                        # Use the *CSV's* SIS ID as the Z-SIS Record ID
                                         'Z-SIS Record ID': term,
                                         'Name': name_val,
                                         'Constituent Code': combined_codes,
@@ -354,7 +363,7 @@ def upload_csv():
                                         'Primary': 'No'
                                     })
                             else:
-                                # If educations fail
+                                # If educations fail, still store the row
                                 results.append({
                                     'System Record ID': cid,
                                     'Constituent ID': bb_lookup_id,
@@ -373,6 +382,7 @@ def upload_csv():
                                 })
                 else:
                     print("Error searching for:", term, "status code:", response.status_code)
+                    # No valid result
                     results.append({
                         'System Record ID': 'N/A',
                         'Constituent ID': 'N/A',
@@ -390,10 +400,10 @@ def upload_csv():
                         'Primary': 'No'
                     })
 
-            # Save new results to the session
+            # ---- Save new results in the session ----
             session['results'] = results
 
-            # Build summary if desired
+            # Build summary for display if needed
             unique_constituents = {}
             for line in results:
                 cid = line['System Record ID']
@@ -401,16 +411,15 @@ def upload_csv():
                     unique_constituents[cid] = {
                         'id': cid,
                         'constituent_id': line['Constituent ID'],
+                        # store the CSV Z-SIS directly
                         'z_sis_record_id': line['Z-SIS Record ID'],
                         'name': line['Name'],
                         'codes': line['Constituent Code'].split(', ')
                             if line['Constituent Code'] and line['Constituent Code'] != 'N/A' else []
                     }
 
-            final_data = {
-                'value': list(unique_constituents.values()),
-                'count': len(unique_constituents)
-            }
+            final_data = {'value': list(unique_constituents.values()),
+                          'count': len(unique_constituents)}
             data = final_data
 
     return render_template('CSV_page.html', data=data)
@@ -424,20 +433,9 @@ def download_results():
 
     output_str = StringIO()
     fieldnames = [
-        'System Record ID',
-        'Constituent ID',
-        'Z-SIS Record ID',
-        'Name',
-        'Constituent Code',
-        'School Name',
-        'Status',
-        'Class Of',
-        'Grade Level',
-        'Type',
-        'Majors',
-        'Date Entered',
-        'Date Left',
-        'Primary'
+        'System Record ID', 'Constituent ID', 'Z-SIS Record ID', 'Name', 'Constituent Code',
+        'School Name', 'Status', 'Class Of', 'Grade Level', 'Type', 'Majors',
+        'Date Entered', 'Date Left', 'Primary'
     ]
     writer = csv.DictWriter(output_str, fieldnames=fieldnames)
     writer.writeheader()
@@ -446,6 +444,7 @@ def download_results():
 
     csv_data = output_str.getvalue().encode('utf-8')
     output = BytesIO(csv_data)
+
     return send_file(output, mimetype='text/csv', download_name='output.csv', as_attachment=True)
 
 if __name__ == '__main__':
