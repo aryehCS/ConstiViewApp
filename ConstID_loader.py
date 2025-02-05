@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, session, send_file
+from flask import Flask, request, render_template, render_template_string, redirect, url_for, session, send_file
 import requests
 import configparser
 import csv
@@ -24,7 +24,7 @@ def get_access_token():
         'grant_type': 'client_credentials',
         'client_id': client_id,
         'client_secret': client_secret
-    })
+    }) # exchanges client_id and client_secret for an access token from Blackbaud
     return response.json().get('access_token')
 
 # Grade level mapping - will need to be updated on a yearly basis
@@ -87,183 +87,123 @@ def index():
 
     constituent_id = request.args.get('constituent_id')
     if constituent_id:
-        # Single constituent fetch by ID
         api_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
         response = requests.get(api_url, headers=headers)
-        print(f"[DEBUG] GET {api_url}, status={response.status_code}")
         if response.status_code == 200:
             constituent_data = response.json()
-            print("[DEBUG] API Response for constituent:", constituent_data)
+            print("API Response for constituent:", constituent_data)  # Debug statement
             constituent_data['import_id'] = constituent_data.get('import_id', 'N/A')
             constituent_data['constituent_id'] = constituent_data.get('lookup_id', 'N/A')
-
-            # Fetch SIS ID alias
-            alias_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/aliases'
-            alias_resp = requests.get(alias_url, headers=headers)
-            print(f"[DEBUG] GET {alias_url}, status={alias_resp.status_code}")
-            if alias_resp.status_code == 200:
-                alias_data = alias_resp.json()
-                print("[DEBUG] Alias data:", alias_data)
-                alias_list = alias_data.get('value', [])
-                sis_id_alias = next((a['alias'] for a in alias_list if a.get('alias_type') == 'SIS ID'), 'N/A')
-            else:
-                sis_id_alias = 'N/A'
-
-            constituent_data['sis_id_alias'] = sis_id_alias
-
-            # Build the single result for the template
             data = {'value': [constituent_data]}
-
             # fetch constituent codes
             codes_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/constituentcodes'
             response_codes = requests.get(codes_url, headers=headers)
-            print(f"[DEBUG] GET {codes_url}, status={response_codes.status_code}")
             if response_codes.status_code == 200:
-                codes_json = response_codes.json()
-                print("[DEBUG] Constituent codes data:", codes_json)
-                codes = codes_json.get('value', [])
+                codes = response_codes.json().get('value', [])
                 data['value'][0]['codes'] = [code['description'] for code in codes]
             else:
                 data['value'][0]['codes'] = []
 
-            # fetch custom fields
+            # fetch custom fields -> looking for z-sis record id
             custom_fields_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/customfields'
             response_custom_fields = requests.get(custom_fields_url, headers=headers)
-            print(f"[DEBUG] GET {custom_fields_url}, status={response_custom_fields.status_code}")
             if response_custom_fields.status_code == 200:
-                cf_json = response_custom_fields.json()
-                print("[DEBUG] Custom fields data:", cf_json)
-                custom_fields = cf_json.get('value', [])
-                z_sis_record_id = next(
-                    (field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'),
-                    'N/A'
-                )
+                custom_fields = response_custom_fields.json().get('value', [])
+                z_sis_record_id = next((field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'), 'N/A')
                 data['value'][0]['z_sis_record_id'] = z_sis_record_id
             else:
                 data['value'][0]['z_sis_record_id'] = 'N/A'
 
         else:
-            print(f"[ERROR] Could not fetch constituent: status_code={response.status_code}")
+            print(f"Error fetching constituent by ID: {response.status_code}")
 
     elif request.method == 'POST':
-        # Searching by userEntry text
         userEntry = request.form.get('userEntry').strip()
         encoded_userEntry = requests.utils.quote(userEntry)
         api_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_userEntry}'
         response = requests.get(api_url, headers=headers)
-        print(f"[DEBUG] GET {api_url}, status={response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            print("[DEBUG] API Response for search:", data)
-
+            print("API Response for search:", data)  # Debug statement
             for constituent in data['value']:
                 cid = constituent['id']
                 constituent['import_id'] = constituent.get('import_id', 'N/A')
                 constituent['constituent_id'] = constituent.get('lookup_id', 'N/A')
-
-                # Fetch SIS ID alias
-                alias_url = f'{base_url}/constituent/v1/constituents/{cid}/aliases'
-                alias_resp = requests.get(alias_url, headers=headers)
-                print(f"[DEBUG] GET {alias_url}, status={alias_resp.status_code}")
-                if alias_resp.status_code == 200:
-                    alias_json = alias_resp.json()
-                    print("[DEBUG] Alias data for search result:", alias_json)
-                    alias_list = alias_json.get('value', [])
-                    sis_id_alias = next((a['alias'] for a in alias_list if a.get('alias_type') == 'SIS ID'), 'N/A')
-                else:
-                    sis_id_alias = 'N/A'
-
-                constituent['sis_id_alias'] = sis_id_alias
-
                 # fetch codes
                 codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
                 response_codes = requests.get(codes_url, headers=headers)
-                print(f"[DEBUG] GET {codes_url}, status={response_codes.status_code}")
                 if response_codes.status_code == 200:
-                    codes_json = response_codes.json()
-                    print("[DEBUG] Codes data:", codes_json)
-                    codes = codes_json.get('value', [])
+                    codes = response_codes.json().get('value', [])
                     constituent['codes'] = [code['description'] for code in codes]
                 else:
                     constituent['codes'] = []
 
-                # fetch custom fields
+                # fetch custom fields -> z_sis_record_id
                 custom_fields_url = f'{base_url}/constituent/v1/constituents/{cid}/customfields'
                 response_custom_fields = requests.get(custom_fields_url, headers=headers)
-                print(f"[DEBUG] GET {custom_fields_url}, status={response_custom_fields.status_code}")
                 if response_custom_fields.status_code == 200:
-                    cf_json = response_custom_fields.json()
-                    print("[DEBUG] Custom fields data:", cf_json)
-                    custom_fields = cf_json.get('value', [])
-                    z_sis_record_id = next(
-                        (field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'),
-                        'N/A'
-                    )
+                    custom_fields = response_custom_fields.json().get('value', [])
+                    z_sis_record_id = next((field['value'] for field in custom_fields if field.get('category') == 'Z-SIS Record ID'), 'N/A')
                     constituent['z_sis_record_id'] = z_sis_record_id
                 else:
                     constituent['z_sis_record_id'] = 'N/A'
         else:
-            print(f"[ERROR] Could not perform search: status_code={response.status_code}")
+            print(f"Error with search request: {response.status_code}")
 
-    # After all that, prepare the data for template
     if data and 'value' in data:
         data['count'] = len(data['value'])
     return render_template('main_page.html', data=data)
 
 @app.route('/relationships/<constituent_id>')
 def relationships(constituent_id):
+    # this route shows relationships for a given constituent
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
         'Bb-Api-Subscription-Key': subscription_key
     }
 
+    # fetch info to display constituent name
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
-    print(f"[DEBUG] GET {info_url}, status={response_info.status_code}")
     if response_info.status_code == 200:
         constituent_name = response_info.json().get('name', 'Unknown')
     else:
         constituent_name = "Unknown"
 
+    # fetch relationships for the constituent
     rel_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/relationships'
     response_rel = requests.get(rel_url, headers=headers)
-    print(f"[DEBUG] GET {rel_url}, status={response_rel.status_code}")
     if response_rel.status_code == 200:
-        rel_json = response_rel.json()
-        print("[DEBUG] Relationships data:", rel_json)
-        relationships = rel_json.get('value', [])
+        relationships = response_rel.json().get('value', [])
     else:
         relationships = []
 
-    return render_template('relationships_page.html',
-                           relationships=relationships,
-                           constituent_name=constituent_name)
+    return render_template('relationships_page.html', relationships=relationships, constituent_name=constituent_name)
 
 @app.route('/education/<constituent_id>')
 def education(constituent_id):
+    # shows all education records for a given constituent
     token = config['tokens']['access_token']
     headers = {
         'Authorization': f'Bearer {token}',
         'Bb-Api-Subscription-Key': subscription_key
     }
 
+    # fetch const name for display at top of page
     info_url = f'{base_url}/constituent/v1/constituents/{constituent_id}'
     response_info = requests.get(info_url, headers=headers)
-    print(f"[DEBUG] GET {info_url}, status={response_info.status_code}")
     if response_info.status_code == 200:
         constituent_name = response_info.json().get('name', 'Unknown')
     else:
         constituent_name = "Unknown"
 
+    # fetch education data
     edu_url = f'{base_url}/constituent/v1/constituents/{constituent_id}/educations'
     response_education = requests.get(edu_url, headers=headers)
-    print(f"[DEBUG] GET {edu_url}, status={response_education.status_code}")
     if response_education.status_code == 200:
-        edu_json = response_education.json()
-        print("[DEBUG] Education data:", edu_json)
-        education_data = edu_json.get('value', [])
-        # Apply your grade_level_mapping
+        education_data = response_education.json().get('value', [])
+        # loop & map classes
         for record in education_data:
             school_name = record.get('school', 'N/A')
             class_of = record.get('class_of', 'N/A')
@@ -279,12 +219,17 @@ def education(constituent_id):
     else:
         education_data = []
 
-    return render_template('education_page.html',
-                           education_data=education_data,
-                           constituent_name=constituent_name)
+    return render_template('education_page.html', education_data=education_data, constituent_name=constituent_name)
 
 @app.route('/upload_csv', methods=['GET', 'POST'])
 def upload_csv():
+    """
+    Upload a CSV that contains your Z-SIS IDs in the first column.
+    We'll:
+    1. Read each row's Z-SIS ID (call it 'term').
+    2. Search the Blackbaud API to get constituent data for that 'term'.
+    3. Collect each result, but use the *CSV's* Z-SIS ID as 'Z-SIS Record ID'.
+    """
     data = None
     token = config['tokens']['access_token']
     headers = {
@@ -297,107 +242,178 @@ def upload_csv():
         if file and file.filename.endswith('.csv'):
             file_data = file.read().decode('utf-8')
             csv_reader = csv.reader(StringIO(file_data))
+            search_terms = [row[0] for row in csv_reader if row]
 
             results = []
 
-            for row in csv_reader:
-                if not row:
-                    continue
-                z_sis_id = row[0].strip()
-                encoded_term = requests.utils.quote(z_sis_id)
+            for term in search_terms:
+                encoded_term = requests.utils.quote(term)
                 search_url = f'{base_url}/constituent/v1/constituents/search?search_text={encoded_term}'
                 response = requests.get(search_url, headers=headers)
-                print(f"[DEBUG] GET {search_url}, status={response.status_code}")
-
+                print("API Response for search term:", term)
+                print("Status:", response.status_code)
                 if response.status_code == 200:
                     search_data = response.json()
-                    print("[DEBUG] API Response for search term:", z_sis_id, search_data)
+                    print("Search data:", search_data)
                     found_constituents = search_data.get('value', [])
 
                     if not found_constituents:
-                        # No match
+                        # No match found for that Z-SIS ID
                         results.append({
-                            'Original Z-SIS ID': z_sis_id,
-                            'Returned lookup_id': 'N/A',
-                            'SIS ID Alias': 'N/A',
-                            'Name': 'Not Found',
                             'System Record ID': 'N/A',
-                            'Z-SIS Record ID': 'N/A',
+                            'Constituent ID': 'N/A',
+                            # <-- Use the CSV's term directly in the final output
+                            'Z-SIS Record ID': term,
+                            'Name': 'Not Found',
+                            'Constituent Code': 'N/A',
+                            'School Name': 'N/A',
+                            'Status': 'N/A',
+                            'Class Of': 'N/A',
+                            'Grade Level': 'N/A',
+                            'Type': 'N/A',
+                            'Majors': 'N/A',
+                            'Date Entered': 'N/A',
+                            'Date Left': 'N/A',
+                            'Primary': 'No'
                         })
                     else:
                         for constituent in found_constituents:
                             cid = constituent['id']
-                            returned_lookup_id = constituent.get('lookup_id', 'N/A')
+                            # If the API returns a 'lookup_id' or something similar
+                            bb_lookup_id = constituent.get('lookup_id', 'N/A')
+                            # Or use the name
                             name_val = constituent.get('name', 'N/A')
 
-                            # Fetch custom fields
-                            cf_url = f'{base_url}/constituent/v1/constituents/{cid}/customfields'
-                            rcf = requests.get(cf_url, headers=headers)
-                            print(f"[DEBUG] GET {cf_url}, status={rcf.status_code}")
-                            if rcf.status_code == 200:
-                                cf_json = rcf.json()
-                                print("[DEBUG] Custom fields data:", cf_json)
-                                cf_list = cf_json.get('value', [])
-                                z_sis_record_id = next(
-                                    (field['value'] for field in cf_list
-                                     if field.get('category') == 'Z-SIS Record ID'),
-                                    'N/A'
-                                )
+                            # fetch codes
+                            codes_url = f'{base_url}/constituent/v1/constituents/{cid}/constituentcodes'
+                            rcodes = requests.get(codes_url, headers=headers)
+                            if rcodes.status_code == 200:
+                                c_codes = rcodes.json().get('value', [])
+                                codes_list = [c['description'] for c in c_codes]
+                                combined_codes = ', '.join(codes_list)
                             else:
-                                z_sis_record_id = 'N/A'
+                                combined_codes = 'N/A'
 
-                            # Fetch alias for SIS ID
-                            alias_url = f'{base_url}/constituent/v1/constituents/{cid}/aliases'
-                            alias_resp = requests.get(alias_url, headers=headers)
-                            print(f"[DEBUG] GET {alias_url}, status={alias_resp.status_code}")
-                            if alias_resp.status_code == 200:
-                                alias_json = alias_resp.json()
-                                print("[DEBUG] Alias data:", alias_json)
-                                alias_list = alias_json.get('value', [])
-                                sis_id_alias = next(
-                                    (a['alias'] for a in alias_list if a.get('alias_type') == 'SIS ID'),
-                                    'N/A'
-                                )
+                            # fetch educations
+                            edu_url = f'{base_url}/constituent/v1/constituents/{cid}/educations'
+                            redu = requests.get(edu_url, headers=headers)
+                            if redu.status_code == 200:
+                                edu_data = redu.json().get('value', [])
+                                primary_record = next((ed for ed in edu_data if ed.get('primary')), None)
+                                if primary_record:
+                                    school_name = primary_record.get('school', 'N/A')
+                                    class_of = primary_record.get('class_of', 'N/A')
+                                    if class_of != 'N/A' and school_name in grade_level_mapping:
+                                        try:
+                                            grade_level = grade_level_mapping[school_name].get(int(class_of), 'N/A')
+                                        except:
+                                            grade_level = 'N/A'
+                                    else:
+                                        grade_level = 'N/A'
+
+                                    date_entered = primary_record.get('date_entered')
+                                    de_str = f"{date_entered['d']}/{date_entered['m']}/{date_entered['y']}" if date_entered else 'N/A'
+
+                                    date_left = primary_record.get('date_left')
+                                    dl_str = f"{date_left['d']}/{date_left['m']}/{date_left['y']}" if date_left else 'N/A'
+
+                                    majors_list = primary_record.get('majors', [])
+                                    majors_str = ", ".join(majors_list) if majors_list else 'N/A'
+
+                                    # Add a row for this constituent
+                                    results.append({
+                                        'System Record ID': cid,
+                                        # We'll treat 'Constituent ID' as the 'lookup_id'
+                                        'Constituent ID': bb_lookup_id,
+                                        # Use the *CSV's* SIS ID as the Z-SIS Record ID
+                                        'Z-SIS Record ID': term,
+                                        'Name': name_val,
+                                        'Constituent Code': combined_codes,
+                                        'School Name': school_name,
+                                        'Status': primary_record.get('status', 'N/A'),
+                                        'Class Of': class_of,
+                                        'Grade Level': grade_level,
+                                        'Type': primary_record.get('type', 'N/A'),
+                                        'Majors': majors_str,
+                                        'Date Entered': de_str,
+                                        'Date Left': dl_str,
+                                        'Primary': 'Yes'
+                                    })
+                                else:
+                                    # no primary record
+                                    results.append({
+                                        'System Record ID': cid,
+                                        'Constituent ID': bb_lookup_id,
+                                        'Z-SIS Record ID': term,
+                                        'Name': name_val,
+                                        'Constituent Code': combined_codes,
+                                        'School Name': 'N/A',
+                                        'Status': 'N/A',
+                                        'Class Of': 'N/A',
+                                        'Grade Level': 'N/A',
+                                        'Type': 'N/A',
+                                        'Majors': 'N/A',
+                                        'Date Entered': 'N/A',
+                                        'Date Left': 'N/A',
+                                        'Primary': 'No'
+                                    })
                             else:
-                                sis_id_alias = 'N/A'
-
-                            results.append({
-                                'Original Z-SIS ID': z_sis_id,
-                                'Returned lookup_id': returned_lookup_id,
-                                'SIS ID Alias': sis_id_alias,
-                                'Name': name_val,
-                                'System Record ID': cid,
-                                'Z-SIS Record ID': z_sis_record_id
-                            })
+                                # If educations fail, still store the row
+                                results.append({
+                                    'System Record ID': cid,
+                                    'Constituent ID': bb_lookup_id,
+                                    'Z-SIS Record ID': term,
+                                    'Name': name_val,
+                                    'Constituent Code': combined_codes,
+                                    'School Name': 'N/A',
+                                    'Status': 'N/A',
+                                    'Class Of': 'N/A',
+                                    'Grade Level': 'N/A',
+                                    'Type': 'N/A',
+                                    'Majors': 'N/A',
+                                    'Date Entered': 'N/A',
+                                    'Date Left': 'N/A',
+                                    'Primary': 'No'
+                                })
                 else:
-                    print(f"[ERROR] Search request failed: status_code={response.status_code}")
+                    print("Error searching for:", term, "status code:", response.status_code)
+                    # No valid result
                     results.append({
-                        'Original Z-SIS ID': z_sis_id,
-                        'Returned lookup_id': 'N/A',
-                        'SIS ID Alias': 'N/A',
-                        'Name': 'API Error',
                         'System Record ID': 'N/A',
-                        'Z-SIS Record ID': 'N/A',
+                        'Constituent ID': 'N/A',
+                        'Z-SIS Record ID': term,
+                        'Name': 'API Error',
+                        'Constituent Code': 'N/A',
+                        'School Name': 'N/A',
+                        'Status': 'N/A',
+                        'Class Of': 'N/A',
+                        'Grade Level': 'N/A',
+                        'Type': 'N/A',
+                        'Majors': 'N/A',
+                        'Date Entered': 'N/A',
+                        'Date Left': 'N/A',
+                        'Primary': 'No'
                     })
 
-            # Store the results in session
             session['results'] = results
 
-            # Build a "summary" for quick display if desired
+            # Build summary for display if needed
             unique_constituents = {}
-            for entry in results:
-                cid = entry['System Record ID']
+            for line in results:
+                cid = line['System Record ID']
                 if cid not in unique_constituents:
                     unique_constituents[cid] = {
                         'id': cid,
-                        'lookup_id': entry['Returned lookup_id'],
-                        'sis_alias': entry['SIS ID Alias'],
-                        'z_sis_record_id': entry['Z-SIS Record ID'],
-                        'name': entry['Name'],
-                        'original_z_sis_id': entry['Original Z-SIS ID']
+                        'constituent_id': line['Constituent ID'],
+                        # store the CSV Z-SIS directly
+                        'z_sis_record_id': line['Z-SIS Record ID'],
+                        'name': line['Name'],
+                        'codes': line['Constituent Code'].split(', ')
+                            if line['Constituent Code'] and line['Constituent Code'] != 'N/A' else []
                     }
 
-            final_data = {'value': list(unique_constituents.values()), 'count': len(unique_constituents)}
+            final_data = {'value': list(unique_constituents.values()),
+                          'count': len(unique_constituents)}
             data = final_data
 
     return render_template('CSV_page.html', data=data)
@@ -411,12 +427,9 @@ def download_results():
 
     output_str = StringIO()
     fieldnames = [
-        'Original Z-SIS ID',
-        'Returned lookup_id',
-        'SIS ID Alias',
-        'Name',
-        'System Record ID',
-        'Z-SIS Record ID'
+        'System Record ID', 'Constituent ID', 'Z-SIS Record ID', 'Name', 'Constituent Code',
+        'School Name', 'Status', 'Class Of', 'Grade Level', 'Type', 'Majors',
+        'Date Entered', 'Date Left', 'Primary'
     ]
     writer = csv.DictWriter(output_str, fieldnames=fieldnames)
     writer.writeheader()
@@ -425,6 +438,7 @@ def download_results():
 
     csv_data = output_str.getvalue().encode('utf-8')
     output = BytesIO(csv_data)
+
     return send_file(output, mimetype='text/csv', download_name='output.csv', as_attachment=True)
 
 if __name__ == '__main__':
