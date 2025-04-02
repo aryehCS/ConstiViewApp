@@ -65,7 +65,7 @@ Tokens updated successfully in the .ini file.
 13. Enter Control+C to exit bb_auth.py. Now cd back into the project directory:
 ``` cd .. ```
 14. Run the following command to run the application:
-``` python3 CSVoutput_test.py ```
+``` python3 ConstID_loader_with_Added_Storage.py ```
 15. Now go to http://127.0.0.1:5000 in your browser. 
 16. When finished, enter Control+C (in terminal) to exit CSVoutput_test.py.
 
