@@ -24,7 +24,10 @@
     <input type="text" name="userEntry" class="form-control mr-2" placeholder="Enter search term" required>
     <button type="submit" class="btn btn-primary">Search</button>
   </form>
-  <a href="{{ url_for('upload_csv') }}" class="btn btn-primary">Upload CSV</a>
+  <div class="text-center mb-4">
+    <a href="{{ url_for('upload_csv') }}" class="btn btn-primary mr-2">Upload CSV</a>
+    <a href="{{ url_for('get_all_emails') }}" class="btn btn-success">Get All Emails</a>
+  </div>
   {% if data %}
     <h3 class="text-primary">Search Results (Total: {{ data['count'] }})</h3>
     <div class="table-responsive">
